@@ -15,10 +15,10 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 )
 
-func DecryptFile(filename string, key string) (err error) {
+func DecryptFile(filename string, key string) error {
 	vars, err := godotenv.Read(filename)
 	if err != nil {
-		return
+		return err
 	}
 
 	for i, x := range vars {
@@ -31,14 +31,23 @@ func DecryptFile(filename string, key string) (err error) {
 			log.Fatalln(errors.New(i + " has invalid stored in it"))
 		}
 
-		ciphertext, _ := hex.DecodeString(parts[1]) // TODO check errors here
+		ciphertext, err := hex.DecodeString(parts[1])
+		if err != nil {
+			return err
+		}
 
 		copy(nonce[:], ciphertext[:24])
-		salt, _ := hex.DecodeString(parts[0]) // TODO check errors here
+		salt, err := hex.DecodeString(parts[0])
+		if err != nil {
+			return err
+		}
 		derivedKeyBytes := pbkdf2.Key([]byte(key), salt, 4096, 32, sha256.New)
 		copy(derivedKey[:], derivedKeyBytes)
 
-		plaintext, _ := secretbox.Open([]byte{}, ciphertext[24:], &nonce, &derivedKey)
+		plaintext, success := secretbox.Open([]byte{}, ciphertext[24:], &nonce, &derivedKey)
+		if !success {
+			return err
+		}
 
 		fmt.Print(i, "='", string(plaintext), "'\n")
 	}
@@ -46,22 +55,28 @@ func DecryptFile(filename string, key string) (err error) {
 	return nil
 }
 
-func EncryptFile(filename string, key string) (err error) {
+func EncryptFile(filename string, key string) error {
 	vars, err := godotenv.Read(filename)
 	if err != nil {
-		return
+		return err
 	}
 
 	for i, value := range vars {
 		var nonce [24]byte
 		var derivedKey [32]byte
 
-		_, _ = io.ReadFull(rand.Reader, nonce[:]) // TODO check for errors here
-		salt, _ := makeSalt(32)                   // TODO check for errors here
+		_, err := io.ReadFull(rand.Reader, nonce[:])
+		if err != nil {
+			return err
+		}
+		salt, err := makeSalt(32)
+		if err != nil {
+			return err
+		}
 		derivedKeyBytes := pbkdf2.Key([]byte(key), salt, 4096, 32, sha256.New)
 		copy(derivedKey[:], derivedKeyBytes)
 
-		ciphertext := secretbox.Seal(nonce[:], []byte(value), &nonce, &derivedKey) // TODO check for errors here
+		ciphertext := secretbox.Seal(nonce[:], []byte(value), &nonce, &derivedKey)
 
 		fmt.Print(i, "='", hex.EncodeToString(salt), " ", hex.EncodeToString(ciphertext), "'\n")
 	}
